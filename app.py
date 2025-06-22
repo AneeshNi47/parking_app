@@ -78,13 +78,7 @@ def detect():
         return jsonify({"slots": []})
     with frame_lock:
         gray = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2GRAY)
-        updated_slots = []
-        for slot in saved_slots:
-            x, y, w, h = slot['x'], slot['y'], slot['width'], slot['height']
-            cropped = gray[y:y+h, x:x+w]
-            avg_brightness = np.mean(cropped)
-            status = "vacant" if avg_brightness > 60 else "used"
-            updated_slots.append({"x": x, "y": y, "width": w, "height": h, "status": status})
+        updated_slots = update_slot_status(saved_slots, gray)
     return jsonify({"slots": updated_slots})
 
 if __name__ == "__main__":

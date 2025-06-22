@@ -27,93 +27,132 @@
     </div>
 
     <canvas id="canvas" width="640" height="480"></canvas>
+    <div id="slotStats" style="margin-top: 10px; font-size: 18px;">
+    ✅ Vacant: <span id="vacantCount">0</span> &nbsp;&nbsp; 🚫 Used: <span id="usedCount">0</span>
+</div>
 
-    <script>
-        let mode = '{{ mode }}';
-        let canvas = document.getElementById("canvas");
-        let ctx = canvas.getContext("2d");
-        let isDrawing = false;
-        let startX, startY;
-        let slots = [];
+<script>
+    let mode = '{{ mode }}';
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
 
-        function setMode(m) {
-            fetch('/set_mode', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: m })
-            }).then(() => location.reload());
-        }
+    let slots = [];
+    let currentPolygon = [];
+    let drawingInProgress = false;
 
-        function fetchFrame() {
-            fetch("/frame").then(r => r.json()).then(data => {
-                let img = new Image();
-                img.onload = () => {
-                    ctx.drawImage(img, 0, 0);
-                    if (mode === 'drawing') drawBoxes();
-                    if (mode === 'detection') fetchDetection();
-                };
-                img.src = 'data:image/jpeg;base64,' + data.frame;
-            });
-        }
+    function setMode(m) {
+        fetch('/set_mode', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode: m })
+        }).then(() => location.reload());
+    }
 
-        function drawBoxes() {
-            slots.forEach(s => {
-                ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
-                ctx.strokeRect(s.x1, s.y1, s.x2 - s.x1, s.y2 - s.y1);
-                ctx.fillStyle = ctx.strokeStyle;
-                ctx.fillText(s.status || 'vacant', s.x1 + 5, s.y1 + 15);
-            });
-        }
-
-        function fetchDetection() {
-            fetch('/detect')
-            .then(r => r.json())
-            .then(data => {
-                slots = data.slots;
+    function fetchFrame() {
+        fetch("/frame").then(r => r.json()).then(data => {
+            let img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
                 drawBoxes();
-            });
-        }
-
-        canvas.addEventListener("mousedown", e => {
-            if (mode !== 'drawing') return;
-            isDrawing = true;
-            startX = e.offsetX;
-            startY = e.offsetY;
+                drawCurrentPolygon();
+                if (mode === 'detection') fetchDetection();
+            };
+            img.src = 'data:image/jpeg;base64,' + data.frame;
         });
+    }
 
-        canvas.addEventListener("mouseup", e => {
-            if (mode !== 'drawing') return;
-            isDrawing = false;
-            let endX = e.offsetX;
-            let endY = e.offsetY;
-            let status = prompt("Mark as 'vacant' or 'used':", "vacant");
-            if (status === "vacant" || status === "used") {
-                slots.push({ x1: startX, y1: startY, x2: endX, y2: endY, status });
+    function drawBoxes() {
+        slots.forEach(s => {
+            if (!s.points || s.points.length < 2) return;
+            ctx.beginPath();
+            ctx.moveTo(s.points[0].x, s.points[0].y);
+            for (let i = 1; i < s.points.length; i++) {
+                ctx.lineTo(s.points[i].x, s.points[i].y);
             }
+            ctx.closePath();
+            ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            ctx.fillStyle = ctx.strokeStyle;
+            ctx.font = "14px Arial";
+            ctx.fillText(s.status || 'vacant', s.points[0].x + 4, s.points[0].y + 16);
         });
+    }
 
-        function saveLayout() {
-            const name = document.getElementById("layoutName").value.trim();
-            if (!name || slots.length === 0) return alert("Enter name and add slots");
-            fetch('/save_layout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout_name: name, slots })
-            }).then(() => alert("Layout saved."));
+    function drawCurrentPolygon() {
+        if (currentPolygon.length < 1) return;
+        ctx.beginPath();
+        ctx.moveTo(currentPolygon[0].x, currentPolygon[0].y);
+        for (let i = 1; i < currentPolygon.length; i++) {
+            ctx.lineTo(currentPolygon[i].x, currentPolygon[i].y);
         }
+        ctx.strokeStyle = 'blue';
+        ctx.setLineDash([4, 2]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+    }
 
-        function loadLayout() {
-            const name = document.getElementById("layoutSelect").value;
-            fetch('/load_layout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout_name: name })
-            }).then(r => r.json()).then(data => {
-                slots = data.slots;
-            });
+    canvas.addEventListener("click", (e) => {
+        if (mode !== 'drawing') return;
+        const x = e.offsetX;
+        const y = e.offsetY;
+        currentPolygon.push({ x, y });
+    });
+
+    canvas.addEventListener("contextmenu", (e) => {
+        if (mode !== 'drawing') return;
+        e.preventDefault(); // Right-click ends the polygon
+        if (currentPolygon.length >= 3) {
+            const status = prompt("Mark as 'vacant' or 'used':", "vacant");
+            if (status === "vacant" || status === "used") {
+                slots.push({ points: currentPolygon, status });
+            }
         }
+        currentPolygon = [];
+    });
 
-        setInterval(fetchFrame, 500);
-    </script>
+    function saveLayout() {
+        const name = document.getElementById("layoutName").value.trim();
+        if (!name || slots.length === 0) return alert("Enter name and add slots");
+        fetch('/save_layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ layout_name: name, slots })
+        }).then(() => alert("Layout saved."));
+    }
+
+    function loadLayout() {
+        const name = document.getElementById("layoutSelect").value;
+        fetch('/load_layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ layout_name: name })
+        }).then(r => r.json()).then(data => {
+            slots = data.slots;
+        });
+    }
+
+    function fetchDetection() {
+    fetch('/detect')
+    .then(r => r.json())
+    .then(data => {
+        slots = data.slots;
+        drawBoxes();
+        updateSlotStats();
+    });
+}
+
+function updateSlotStats() {
+    let vacant = slots.filter(s => s.status === "vacant").length;
+    let used = slots.filter(s => s.status === "used").length;
+    document.getElementById("vacantCount").innerText = vacant;
+    document.getElementById("usedCount").innerText = used;
+}
+
+    setInterval(fetchFrame, 500);
+</script>
+
+
 </body>
 </html>
