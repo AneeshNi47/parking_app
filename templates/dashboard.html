@@ -7,6 +7,7 @@
         canvas { border: 2px solid #444; margin-top: 10px; }
         .toolbar { margin: 10px; }
         select, button, input { padding: 6px; margin: 4px; font-size: 14px; }
+        #slotCount { margin-top: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -24,135 +25,127 @@
         <button onclick="loadLayout()">📂 Load Layout</button>
         <input type="text" id="layoutName" placeholder="Layout name" />
         <button onclick="saveLayout()">💾 Save Layout</button>
+        <button onclick="finishDrawing()">✅ Finish Drawing</button>
     </div>
 
     <canvas id="canvas" width="640" height="480"></canvas>
-    <div id="slotStats" style="margin-top: 10px; font-size: 18px;">
-    ✅ Vacant: <span id="vacantCount">0</span> &nbsp;&nbsp; 🚫 Used: <span id="usedCount">0</span>
-</div>
+    <div id="slotCount">Slots: 0 used / 0 vacant</div>
 
-<script>
-    let mode = '{{ mode }}';
-    let canvas = document.getElementById("canvas");
-    let ctx = canvas.getContext("2d");
+    <script>
+        let mode = '{{ mode }}';
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let slots = [];
+        let drawingPoints = [];
 
-    let slots = [];
-    let currentPolygon = [];
-    let drawingInProgress = false;
+        function setMode(m) {
+            fetch('/set_mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: m })
+            }).then(() => location.reload());
+        }
 
-    function setMode(m) {
-        fetch('/set_mode', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ mode: m })
-        }).then(() => location.reload());
-    }
+        function fetchFrame() {
+            fetch("/frame").then(r => r.json()).then(data => {
+                let img = new Image();
+                img.onload = () => {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(img, 0, 0);
+                    drawBoxes();
+                    if (mode === 'detection') fetchDetection();
+                };
+                img.src = 'data:image/jpeg;base64,' + data.frame;
+            });
+        }
 
-    function fetchFrame() {
-        fetch("/frame").then(r => r.json()).then(data => {
-            let img = new Image();
-            img.onload = () => {
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 0, 0);
+        function drawBoxes() {
+            let used = 0, vacant = 0;
+            slots.forEach(s => {
+                if (!s.points) return;
+                ctx.beginPath();
+                ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
+                ctx.fillStyle = s.status === 'used' ? 'rgba(255,0,0,0.2)' : 'rgba(0,255,0,0.2)';
+                ctx.moveTo(s.points[0].x, s.points[0].y);
+                s.points.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.closePath();
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = "black";
+                ctx.fillText(s.status || 'vacant', s.points[0].x + 5, s.points[0].y + 15);
+
+                if (s.status === "used") used++;
+                if (s.status === "vacant") vacant++;
+            });
+            document.getElementById("slotCount").innerText = `Slots: ${used} used / ${vacant} vacant`;
+        }
+
+        function fetchDetection() {
+            fetch('/detect')
+            .then(r => r.json())
+            .then(data => {
+                slots = data.slots;
                 drawBoxes();
-                drawCurrentPolygon();
-                if (mode === 'detection') fetchDetection();
-            };
-            img.src = 'data:image/jpeg;base64,' + data.frame;
-        });
-    }
+            });
+        }
 
-    function drawBoxes() {
-        slots.forEach(s => {
-            if (!s.points || s.points.length < 2) return;
+        canvas.addEventListener("click", e => {
+            if (mode !== 'drawing') return;
+            const x = e.offsetX;
+            const y = e.offsetY;
+            drawingPoints.push({ x, y });
+
+            // Draw point
+            ctx.fillStyle = "blue";
             ctx.beginPath();
-            ctx.moveTo(s.points[0].x, s.points[0].y);
-            for (let i = 1; i < s.points.length; i++) {
-                ctx.lineTo(s.points[i].x, s.points[i].y);
+            ctx.arc(x, y, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw connecting line if more than 1 point
+            if (drawingPoints.length > 1) {
+                ctx.strokeStyle = "blue";
+                ctx.beginPath();
+                ctx.moveTo(drawingPoints[drawingPoints.length - 2].x, drawingPoints[drawingPoints.length - 2].y);
+                ctx.lineTo(x, y);
+                ctx.stroke();
             }
-            ctx.closePath();
-            ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
-            ctx.lineWidth = 2;
-            ctx.stroke();
-            ctx.fillStyle = ctx.strokeStyle;
-            ctx.font = "14px Arial";
-            ctx.fillText(s.status || 'vacant', s.points[0].x + 4, s.points[0].y + 16);
         });
-    }
 
-    function drawCurrentPolygon() {
-        if (currentPolygon.length < 1) return;
-        ctx.beginPath();
-        ctx.moveTo(currentPolygon[0].x, currentPolygon[0].y);
-        for (let i = 1; i < currentPolygon.length; i++) {
-            ctx.lineTo(currentPolygon[i].x, currentPolygon[i].y);
-        }
-        ctx.strokeStyle = 'blue';
-        ctx.setLineDash([4, 2]);
-        ctx.stroke();
-        ctx.setLineDash([]);
-    }
-
-    canvas.addEventListener("click", (e) => {
-        if (mode !== 'drawing') return;
-        const x = e.offsetX;
-        const y = e.offsetY;
-        currentPolygon.push({ x, y });
-    });
-
-    canvas.addEventListener("contextmenu", (e) => {
-        if (mode !== 'drawing') return;
-        e.preventDefault(); // Right-click ends the polygon
-        if (currentPolygon.length >= 3) {
-            const status = prompt("Mark as 'vacant' or 'used':", "vacant");
+        function finishDrawing() {
+            if (drawingPoints.length < 3) {
+                alert("At least 3 points needed.");
+                drawingPoints = [];
+                return;
+            }
+            let status = prompt("Mark as 'vacant' or 'used':", "vacant");
             if (status === "vacant" || status === "used") {
-                slots.push({ points: currentPolygon, status });
+                slots.push({ points: [...drawingPoints], status });
+                drawingPoints = [];
             }
         }
-        currentPolygon = [];
-    });
 
-    function saveLayout() {
-        const name = document.getElementById("layoutName").value.trim();
-        if (!name || slots.length === 0) return alert("Enter name and add slots");
-        fetch('/save_layout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ layout_name: name, slots })
-        }).then(() => alert("Layout saved."));
-    }
+        function saveLayout() {
+            const name = document.getElementById("layoutName").value.trim();
+            if (!name || slots.length === 0) return alert("Enter name and add slots");
+            fetch('/save_layout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layout_name: name, slots })
+            }).then(() => alert("Layout saved."));
+        }
 
-    function loadLayout() {
-        const name = document.getElementById("layoutSelect").value;
-        fetch('/load_layout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ layout_name: name })
-        }).then(r => r.json()).then(data => {
-            slots = data.slots;
-        });
-    }
+        function loadLayout() {
+            const name = document.getElementById("layoutSelect").value;
+            fetch('/load_layout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layout_name: name })
+            }).then(r => r.json()).then(data => {
+                slots = data.slots;
+            });
+        }
 
-    function fetchDetection() {
-    fetch('/detect')
-    .then(r => r.json())
-    .then(data => {
-        slots = data.slots;
-        drawBoxes();
-        updateSlotStats();
-    });
-}
-
-function updateSlotStats() {
-    let vacant = slots.filter(s => s.status === "vacant").length;
-    let used = slots.filter(s => s.status === "used").length;
-    document.getElementById("vacantCount").innerText = vacant;
-    document.getElementById("usedCount").innerText = used;
-}
-
-    setInterval(fetchFrame, 500);
-</script>
-
-
+        setInterval(fetchFrame, 500);
+    </script>
 </body>
 </html>

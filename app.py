@@ -76,9 +76,21 @@ def detect():
     global saved_slots, latest_frame
     if not saved_slots or latest_frame is None:
         return jsonify({"slots": []})
+
     with frame_lock:
         gray = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2GRAY)
-        updated_slots = update_slot_status(saved_slots, gray)
+
+        updated_slots = []
+        for slot in saved_slots:
+            if "points" not in slot:
+                continue
+            pts = np.array([[p['x'], p['y']] for p in slot["points"]], np.int32)
+            mask = np.zeros(gray.shape, dtype=np.uint8)
+            cv2.fillPoly(mask, [pts], 255)
+            mean_val = cv2.mean(gray, mask=mask)[0]
+            status = "used" if mean_val < 60 else "vacant"
+            updated_slots.append({"points": slot["points"], "status": status})
+
     return jsonify({"slots": updated_slots})
 
 if __name__ == "__main__":
