@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Parking Camera Dashboard</title>
+    <style>
+        body { font-family: Arial; text-align: center; background: #f0f0f0; }
+        canvas { border: 2px solid #444; margin-top: 10px; }
+        .toolbar { margin: 10px; }
+        select, button, input { padding: 6px; margin: 4px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <h2>🚗 Parking Lot Monitor</h2>
+
+    <div class="toolbar">
+        <button onclick="setMode('drawing')">🎨 Drawing Mode</button>
+        <button onclick="setMode('detection')">🕵️ Detection Mode</button>
+
+        <select id="layoutSelect">
+            {% for layout in layouts %}
+                <option value="{{ layout }}">{{ layout }}</option>
+            {% endfor %}
+        </select>
+        <button onclick="loadLayout()">📂 Load Layout</button>
+        <input type="text" id="layoutName" placeholder="Layout name" />
+        <button onclick="saveLayout()">💾 Save Layout</button>
+    </div>
+
+    <canvas id="canvas" width="640" height="480"></canvas>
+
+    <script>
+        let mode = '{{ mode }}';
+        let canvas = document.getElementById("canvas");
+        let ctx = canvas.getContext("2d");
+        let isDrawing = false;
+        let startX, startY;
+        let slots = [];
+
+        function setMode(m) {
+            fetch('/set_mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: m })
+            }).then(() => location.reload());
+        }
+
+        function fetchFrame() {
+            fetch("/frame").then(r => r.json()).then(data => {
+                let img = new Image();
+                img.onload = () => {
+                    ctx.drawImage(img, 0, 0);
+                    if (mode === 'drawing') drawBoxes();
+                    if (mode === 'detection') fetchDetection();
+                };
+                img.src = 'data:image/jpeg;base64,' + data.frame;
+            });
+        }
+
+        function drawBoxes() {
+            slots.forEach(s => {
+                ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
+                ctx.strokeRect(s.x1, s.y1, s.x2 - s.x1, s.y2 - s.y1);
+                ctx.fillStyle = ctx.strokeStyle;
+                ctx.fillText(s.status || 'vacant', s.x1 + 5, s.y1 + 15);
+            });
+        }
+
+        function fetchDetection() {
+            fetch('/detect')
+            .then(r => r.json())
+            .then(data => {
+                slots = data.slots;
+                drawBoxes();
+            });
+        }
+
+        canvas.addEventListener("mousedown", e => {
+            if (mode !== 'drawing') return;
+            isDrawing = true;
+            startX = e.offsetX;
+            startY = e.offsetY;
+        });
+
+        canvas.addEventListener("mouseup", e => {
+            if (mode !== 'drawing') return;
+            isDrawing = false;
+            let endX = e.offsetX;
+            let endY = e.offsetY;
+            let status = prompt("Mark as 'vacant' or 'used':", "vacant");
+            if (status === "vacant" || status === "used") {
+                slots.push({ x1: startX, y1: startY, x2: endX, y2: endY, status });
+            }
+        });
+
+        function saveLayout() {
+            const name = document.getElementById("layoutName").value.trim();
+            if (!name || slots.length === 0) return alert("Enter name and add slots");
+            fetch('/save_layout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layout_name: name, slots })
+            }).then(() => alert("Layout saved."));
+        }
+
+        function loadLayout() {
+            const name = document.getElementById("layoutSelect").value;
+            fetch('/load_layout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ layout_name: name })
+            }).then(r => r.json()).then(data => {
+                slots = data.slots;
+            });
+        }
+
+        setInterval(fetchFrame, 500);
+    </script>
+</body>
+</html>
