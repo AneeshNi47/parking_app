@@ -52,9 +52,10 @@
         .then(data => {
           let img = new Image();
           img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             if (mode === 'drawing') {
               drawBoxes();
               drawCurrentPolygon();
