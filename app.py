@@ -8,8 +8,10 @@ import numpy as np
 from utils import save_layout, load_layout, list_layouts
 
 app = Flask(__name__)
+
+# Configure camera with higher resolution if needed
 picam2 = Picamera2()
-picam2.configure(picam2.create_video_configuration(main={"size": (640, 480)}))
+picam2.configure(picam2.create_video_configuration(main={"size": (1280, 720)}))
 picam2.start()
 
 # Global variables
@@ -79,8 +81,10 @@ def detect():
 
     with frame_lock:
         gray = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2GRAY)
-
         updated_slots = []
+        used_count = 0
+        vacant_count = 0
+
         for slot in saved_slots:
             if "points" not in slot:
                 continue
@@ -89,10 +93,14 @@ def detect():
             cv2.fillPoly(mask, [pts], 255)
             mean_val = cv2.mean(gray, mask=mask)[0]
             status = "used" if mean_val < 60 else "vacant"
+            if status == "used":
+                used_count += 1
+            else:
+                vacant_count += 1
             updated_slots.append({"points": slot["points"], "status": status})
 
-    return jsonify({"slots": updated_slots})
+    return jsonify({"slots": updated_slots, "summary": {"used": used_count, "vacant": vacant_count}})
 
 if __name__ == "__main__":
+    print("\u2728 Access your app at http://<tailscale-ip>:5000/dashboard")
     app.run(host="0.0.0.0", port=5000)
-

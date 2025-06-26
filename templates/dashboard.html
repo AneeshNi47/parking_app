@@ -28,7 +28,7 @@
         <button onclick="finishDrawing()">✅ Finish Drawing</button>
     </div>
 
-    <canvas id="canvas" width="640" height="480"></canvas>
+    <canvas id="canvas"></canvas>
     <div id="slotCount">Slots: 0 used / 0 vacant</div>
 
     <script>
@@ -50,12 +50,13 @@
             fetch("/frame").then(r => r.json()).then(data => {
                 let img = new Image();
                 img.onload = () => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    canvas.width = img.width;
+                    canvas.height = img.height;
                     ctx.drawImage(img, 0, 0);
-                    drawBoxes();
+                    if (mode === 'drawing') drawBoxes();
                     if (mode === 'detection') fetchDetection();
                 };
-                img.src = 'data:image/jpeg;base64,' + data.frame;
+                                img.src = 'data:image/jpeg;base64,' + data.frame;
             });
         }
 
