@@ -1,152 +1,165 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Parking Camera Dashboard</title>
-    <style>
-        body { font-family: Arial; text-align: center; background: #f0f0f0; }
-        canvas { border: 2px solid #444; margin-top: 10px; }
-        .toolbar { margin: 10px; }
-        select, button, input { padding: 6px; margin: 4px; font-size: 14px; }
-        #slotCount { margin-top: 10px; font-weight: bold; }
-    </style>
+  <title>🚗 Parking Camera Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f4f4f4; }
+    .toolbar { margin: 15px; }
+    canvas { border: 2px solid #333; margin-top: 10px; }
+    select, button, input { padding: 6px 10px; margin: 5px; font-size: 14px; }
+    #slotCount { margin-top: 10px; font-weight: bold; font-size: 16px; }
+  </style>
 </head>
 <body>
-    <h2>🚗 Parking Lot Monitor</h2>
+  <h2>🚗 Parking Lot Monitor</h2>
 
-    <div class="toolbar">
-        <button onclick="setMode('drawing')">🎨 Drawing Mode</button>
-        <button onclick="setMode('detection')">🕵️ Detection Mode</button>
+  <div class="toolbar">
+    <button onclick="setMode('drawing')">🎨 Drawing Mode</button>
+    <button onclick="setMode('detection')">🕵️ Detection Mode</button>
 
-        <select id="layoutSelect">
-            {% for layout in layouts %}
-                <option value="{{ layout }}">{{ layout }}</option>
-            {% endfor %}
-        </select>
-        <button onclick="loadLayout()">📂 Load Layout</button>
-        <input type="text" id="layoutName" placeholder="Layout name" />
-        <button onclick="saveLayout()">💾 Save Layout</button>
-        <button onclick="finishDrawing()">✅ Finish Drawing</button>
-    </div>
+    <select id="layoutSelect">
+      {% for layout in layouts %}
+        <option value="{{ layout }}">{{ layout }}</option>
+      {% endfor %}
+    </select>
+    <button onclick="loadLayout()">📂 Load Layout</button>
+    <input type="text" id="layoutName" placeholder="Layout name" />
+    <button onclick="saveLayout()">💾 Save Layout</button>
+    <button onclick="finishDrawing()">✅ Finish Drawing</button>
+  </div>
 
-    <canvas id="canvas"></canvas>
-    <div id="slotCount">Slots: 0 used / 0 vacant</div>
+  <canvas id="canvas"></canvas>
+  <div id="slotCount">Slots: 0 used / 0 vacant</div>
 
-    <script>
-        let mode = '{{ mode }}';
-        let canvas = document.getElementById("canvas");
-        let ctx = canvas.getContext("2d");
-        let slots = [];
-        let drawingPoints = [];
+  <script>
+    let mode = '{{ mode }}';
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
+    let slots = [];
+    let drawingPoints = [];
 
-        function setMode(m) {
-            fetch('/set_mode', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: m })
-            }).then(() => location.reload());
-        }
+    function setMode(m) {
+      fetch('/set_mode', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: m })
+      }).then(() => location.reload());
+    }
 
-        function fetchFrame() {
-            fetch("/frame").then(r => r.json()).then(data => {
-                let img = new Image();
-                img.onload = () => {
-                    canvas.width = img.width;
-                    canvas.height = img.height;
-                    ctx.drawImage(img, 0, 0);
-                    if (mode === 'drawing') drawBoxes();
-                    if (mode === 'detection') fetchDetection();
-                };
-                                img.src = 'data:image/jpeg;base64,' + data.frame;
-            });
-        }
-
-        function drawBoxes() {
-            let used = 0, vacant = 0;
-            slots.forEach(s => {
-                if (!s.points) return;
-                ctx.beginPath();
-                ctx.strokeStyle = s.status === 'used' ? 'red' : 'green';
-                ctx.fillStyle = s.status === 'used' ? 'rgba(255,0,0,0.2)' : 'rgba(0,255,0,0.2)';
-                ctx.moveTo(s.points[0].x, s.points[0].y);
-                s.points.forEach(p => ctx.lineTo(p.x, p.y));
-                ctx.closePath();
-                ctx.fill();
-                ctx.stroke();
-                ctx.fillStyle = "black";
-                ctx.fillText(s.status || 'vacant', s.points[0].x + 5, s.points[0].y + 15);
-
-                if (s.status === "used") used++;
-                if (s.status === "vacant") vacant++;
-            });
-            document.getElementById("slotCount").innerText = `Slots: ${used} used / ${vacant} vacant`;
-        }
-
-        function fetchDetection() {
-            fetch('/detect')
-            .then(r => r.json())
-            .then(data => {
-                slots = data.slots;
-                drawBoxes();
-            });
-        }
-
-        canvas.addEventListener("click", e => {
-            if (mode !== 'drawing') return;
-            const x = e.offsetX;
-            const y = e.offsetY;
-            drawingPoints.push({ x, y });
-
-            // Draw point
-            ctx.fillStyle = "blue";
-            ctx.beginPath();
-            ctx.arc(x, y, 3, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Draw connecting line if more than 1 point
-            if (drawingPoints.length > 1) {
-                ctx.strokeStyle = "blue";
-                ctx.beginPath();
-                ctx.moveTo(drawingPoints[drawingPoints.length - 2].x, drawingPoints[drawingPoints.length - 2].y);
-                ctx.lineTo(x, y);
-                ctx.stroke();
+    function fetchFrame() {
+      fetch("/frame")
+        .then(r => r.json())
+        .then(data => {
+          let img = new Image();
+          img.onload = () => {
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            if (mode === 'drawing') {
+              drawBoxes();
+              drawCurrentPolygon();
             }
+            if (mode === 'detection') fetchDetection();
+          };
+          img.src = 'data:image/jpeg;base64,' + data.frame;
         });
+    }
 
-        function finishDrawing() {
-            if (drawingPoints.length < 3) {
-                alert("At least 3 points needed.");
-                drawingPoints = [];
-                return;
-            }
-            let status = prompt("Mark as 'vacant' or 'used':", "vacant");
-            if (status === "vacant" || status === "used") {
-                slots.push({ points: [...drawingPoints], status });
-                drawingPoints = [];
-            }
-        }
+    function drawBoxes() {
+      let used = 0, vacant = 0;
+      slots.forEach(s => {
+        if (!s.points) return;
+        ctx.beginPath();
+        ctx.moveTo(s.points[0].x, s.points[0].y);
+        s.points.forEach(p => ctx.lineTo(p.x, p.y));
+        ctx.closePath();
 
-        function saveLayout() {
-            const name = document.getElementById("layoutName").value.trim();
-            if (!name || slots.length === 0) return alert("Enter name and add slots");
-            fetch('/save_layout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout_name: name, slots })
-            }).then(() => alert("Layout saved."));
-        }
+        ctx.fillStyle = s.status === "used" ? "rgba(255,0,0,0.3)" : "rgba(0,255,0,0.3)";
+        ctx.strokeStyle = s.status === "used" ? "red" : "green";
+        ctx.lineWidth = 2;
+        ctx.fill();
+        ctx.stroke();
 
-        function loadLayout() {
-            const name = document.getElementById("layoutSelect").value;
-            fetch('/load_layout', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ layout_name: name })
-            }).then(r => r.json()).then(data => {
-                slots = data.slots;
-            });
-        }
+        ctx.fillStyle = "#000";
+        ctx.font = "14px Arial";
+        ctx.fillText(s.status || "vacant", s.points[0].x + 5, s.points[0].y + 15);
 
-        setInterval(fetchFrame, 500);
-    </script>
+        if (s.status === "used") used++;
+        else if (s.status === "vacant") vacant++;
+      });
+      document.getElementById("slotCount").innerText = `Slots: ${used} used / ${vacant} vacant`;
+    }
+
+    function drawCurrentPolygon() {
+      if (drawingPoints.length === 0) return;
+      ctx.beginPath();
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 1;
+      ctx.moveTo(drawingPoints[0].x, drawingPoints[0].y);
+      drawingPoints.forEach(p => ctx.lineTo(p.x, p.y));
+      ctx.stroke();
+      drawingPoints.forEach(p => {
+        ctx.beginPath();
+        ctx.fillStyle = "blue";
+        ctx.arc(p.x, p.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function fetchDetection() {
+      fetch("/detect")
+        .then(r => r.json())
+        .then(data => {
+          slots = data.slots;
+          drawBoxes();
+        });
+    }
+
+    canvas.addEventListener("click", e => {
+      if (mode !== 'drawing') return;
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      drawingPoints.push({ x, y });
+    });
+
+    function finishDrawing() {
+      if (drawingPoints.length < 3) {
+        alert("At least 3 points needed.");
+        drawingPoints = [];
+        return;
+      }
+      let status = prompt("Mark as 'vacant' or 'used':", "vacant");
+      if (status === "vacant" || status === "used") {
+        slots.push({ points: [...drawingPoints], status });
+        drawingPoints = [];
+      }
+    }
+
+    function saveLayout() {
+      const name = document.getElementById("layoutName").value.trim();
+      if (!name || slots.length === 0) return alert("Enter name and add slots");
+      fetch('/save_layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout_name: name, slots })
+      }).then(() => alert("Layout saved."));
+    }
+
+    function loadLayout() {
+      const name = document.getElementById("layoutSelect").value;
+      fetch('/load_layout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layout_name: name })
+      })
+        .then(r => r.json())
+        .then(data => {
+          slots = data.slots;
+        });
+    }
+
+    setInterval(fetchFrame, 500);
+  </script>
 </body>
 </html>
