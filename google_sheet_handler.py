@@ -5,7 +5,7 @@ import os
 
 # Setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name("car-counter-raspberry-pi-e70dcd8164ab.json", scope)
 client = gspread.authorize(creds)
 sheet = client.open("CarCounterLogs").sheet1
 
