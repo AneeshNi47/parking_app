@@ -1,106 +1,53 @@
-from flask import Flask, render_template_string, request, jsonify, redirect, url_for
-from picamera2 import Picamera2
-import cv2
+from flask import Flask, render_template_string
 import threading
-import time
-import base64
-import numpy as np
-from utils import save_layout, load_layout, list_layouts
+from car_counter import car_counter_bp, start_car_counter_camera
+from parking_app import parking_bp
+from picamera2 import Picamera2
 
+# ================================
+# Flask App Initialization
+# ================================
 app = Flask(__name__)
 
-# Configure camera with higher resolution if needed
+# Register Blueprints
+app.register_blueprint(car_counter_bp)
+app.register_blueprint(parking_bp)
+
+
+# ================================
+# Routes
+# ================================
+@app.route("/")
+def index():
+    """Home screen with 2 cards: Parking App and Car Counter"""
+    return render_template_string(open("templates/home.html").read())
+
+
+# ================================
+# Camera Setup (Shared)
+# ================================
 picam2 = Picamera2()
 picam2.configure(picam2.create_video_configuration(main={"size": (1280, 720)}))
 picam2.start()
 
-# Global variables
-current_layout_name = None
-current_mode = "detection"
-saved_slots = []
-frame_lock = threading.Lock()
-latest_frame = None
 
-# Background thread to capture frames
-def capture_frames():
-    global latest_frame
-    while True:
-        with frame_lock:
-            latest_frame = picam2.capture_array()
-        time.sleep(0.1)
+# ================================
+# Background Threads
+# ================================
+# 1️⃣ Start the Car Counter YOLOv8 + SORT detection thread
+threading.Thread(target=start_car_counter_camera, args=(picam2,), daemon=True).start()
 
+# 2️⃣ Start Parking App’s frame capture thread
+from parking_app import capture_frames
 threading.Thread(target=capture_frames, daemon=True).start()
 
-@app.route("/")
-def index():
-    return redirect(url_for("dashboard"))
 
-@app.route("/dashboard")
-def dashboard():
-    layouts = list_layouts()
-    return render_template_string(open("templates/dashboard.html").read(),
-                                  mode=current_mode, layouts=layouts)
-
-@app.route("/frame")
-def frame():
-    global latest_frame
-    with frame_lock:
-        if latest_frame is None:
-            return "", 204
-        _, buffer = cv2.imencode('.jpg', latest_frame)
-        jpg_as_text = base64.b64encode(buffer).decode('utf-8')
-        return jsonify({"frame": jpg_as_text})
-
-@app.route("/set_mode", methods=["POST"])
-def set_mode():
-    global current_mode
-    current_mode = request.json.get("mode", "detection")
-    return jsonify({"success": True})
-
-@app.route("/save_layout", methods=["POST"])
-def save_layout_route():
-    data = request.json
-    name = data.get("layout_name")
-    slots = data.get("slots")
-    save_layout(name, slots)
-    return jsonify({"success": True})
-
-@app.route("/load_layout", methods=["POST"])
-def load_layout_route():
-    global saved_slots, current_layout_name
-    layout_name = request.json.get("layout_name")
-    saved_slots = load_layout(layout_name)
-    current_layout_name = layout_name
-    return jsonify({"success": True, "slots": saved_slots})
-
-@app.route("/detect", methods=["GET"])
-def detect():
-    global saved_slots, latest_frame
-    if not saved_slots or latest_frame is None:
-        return jsonify({"slots": []})
-
-    with frame_lock:
-        gray = cv2.cvtColor(latest_frame, cv2.COLOR_BGR2GRAY)
-        updated_slots = []
-        used_count = 0
-        vacant_count = 0
-
-        for slot in saved_slots:
-            if "points" not in slot:
-                continue
-            pts = np.array([[p['x'], p['y']] for p in slot["points"]], np.int32)
-            mask = np.zeros(gray.shape, dtype=np.uint8)
-            cv2.fillPoly(mask, [pts], 255)
-            mean_val = cv2.mean(gray, mask=mask)[0]
-            status = "used" if mean_val < 60 else "vacant"
-            if status == "used":
-                used_count += 1
-            else:
-                vacant_count += 1
-            updated_slots.append({"points": slot["points"], "status": status})
-
-    return jsonify({"slots": updated_slots, "summary": {"used": used_count, "vacant": vacant_count}})
-
+# ================================
+# Run the Flask Server
+# ================================
 if __name__ == "__main__":
-    print("\u2728 Access your app at http://<tailscale-ip>:5000/dashboard")
+    print("🚀 Flask Smart Camera System running...")
+    print("👉 Access the dashboard at: http://<raspberry-pi-ip>:5000/")
+    print("   • Parking App: http://<ip>:5000/dashboard")
+    print("   • Car Counter: http://<ip>:5000/car_counter\n")
     app.run(host="0.0.0.0", port=5000)

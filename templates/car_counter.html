@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🚙 Car Counter Dashboard</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f4f4f4; }
+    .toolbar { margin: 15px; }
+    canvas { border: 2px solid #333; margin-top: 10px; cursor: crosshair; }
+    input[type="checkbox"] { transform: scale(1.5); margin: 10px; }
+    button { padding: 10px 20px; font-size: 16px; margin: 10px; cursor: pointer; }
+    table { width: 80%; margin: 20px auto; border-collapse: collapse; }
+    th, td { border: 1px solid #ccc; padding: 6px; font-size: 14px; }
+    th { background-color: #eee; }
+  </style>
+</head>
+<body>
+  <h2>🚙 Car Counter System</h2>
+
+  <div class="toolbar">
+    <label>
+      <input type="checkbox" id="toggleCounter" onchange="toggleCarCounter(this)">
+      Enable Car Counter
+    </label>
+    <button onclick="syncToSheet()">Sync to Google Sheet</button>
+    <div id="statusMsg"></div>
+  </div>
+
+  <canvas id="canvas"></canvas>
+
+  <div id="vehicleCounts"></div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th><th>Direction</th><th>Type</th><th>Color</th><th>Speed</th><th>Time</th>
+      </tr>
+    </thead>
+    <tbody id="vehicleTable"></tbody>
+  </table>
+
+  <script>
+    let canvas = document.getElementById("canvas");
+    let ctx = canvas.getContext("2d");
+    let lines = [];
+
+    function fetchFrame() {
+      fetch("/frame")
+        .then(r => r.json())
+        .then(data => {
+          let img = new Image();
+          img.onload = () => {
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0);
+
+            // Draw direction lines
+            ctx.strokeStyle = "blue";
+            ctx.lineWidth = 2;
+            lines.forEach(line => {
+              ctx.beginPath();
+              ctx.moveTo(line.x1, line.y1);
+              ctx.lineTo(line.x2, line.y2);
+              ctx.stroke();
+            });
+          };
+          img.src = 'data:image/jpeg;base64,' + data.frame;
+        });
+    }
+
+    // Live vehicle feed
+    function fetchVehicleFeed() {
+      fetch('/vehicle_feed')
+        .then(res => res.json())
+        .then(data => {
+          let counts = data.counts;
+          document.getElementById("vehicleCounts").innerText =
+            `Direction 1: ${counts.d1} | Direction 2: ${counts.d2} | Total: ${counts.total}`;
+
+          let table = document.getElementById("vehicleTable");
+          table.innerHTML = "";
+          data.vehicles.slice(-10).reverse().forEach(row => {
+            let tr = document.createElement("tr");
+            row.forEach(cell => {
+              let td = document.createElement("td");
+              td.innerText = cell;
+              tr.appendChild(td);
+            });
+            table.appendChild(tr);
+          });
+        });
+    }
+
+    setInterval(fetchFrame, 500);
+    setInterval(fetchVehicleFeed, 1000);
+
+    function toggleCarCounter(elem) {
+      fetch('/toggle_car_counter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: elem.checked })
+      }).then(() => {
+        document.getElementById("statusMsg").innerText = elem.checked
+          ? "🔴 Car Counter is ON"
+          : "🟢 Car Counter is OFF";
+      });
+    }
+
+    function syncToSheet() {
+      document.getElementById("statusMsg").innerText = "🔄 Syncing to Google Sheet...";
+      fetch("/sync_sheet", { method: "POST" })
+        .then(r => r.json())
+        .then(data => {
+          document.getElementById("statusMsg").innerText =
+            `✅ Synced ${data.synced} rows to Google Sheet`;
+        });
+    }
+
+    // Click to draw direction lines
+    let clicks = [];
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      clicks.push({x, y});
+      if (clicks.length === 2) {
+        lines.push({ x1: clicks[0].x, y1: clicks[0].y, x2: clicks[1].x, y2: clicks[1].y });
+        clicks = [];
+
+        // Send to backend
+        fetch("/set_lines", {
+          method: "POST",
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lines })
+        });
+      }
+    });
+  </script>
+</body>
+</html>

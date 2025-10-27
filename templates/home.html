@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>🚀 Smart Camera System</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f4f4f4;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    .card-container {
+      display: flex;
+      gap: 40px;
+    }
+    .card {
+      width: 240px;
+      height: 160px;
+      background-color: white;
+      border-radius: 12px;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      font-size: 18px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    .card:hover {
+      transform: scale(1.05);
+    }
+  </style>
+</head>
+<body>
+  <div class="card-container">
+    <div class="card" onclick="location.href='/dashboard'">🚗 Parking App</div>
+    <div class="card" onclick="location.href='/car_counter'">🚙 Car Counter</div>
+  </div>
+</body>
+</html>

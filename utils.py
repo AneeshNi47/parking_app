@@ -22,7 +22,7 @@ def list_layouts():
         return []
     return [f.replace(".json", "") for f in os.listdir(LAYOUT_DIR) if f.endswith(".json")]
 
-def update_slot_status(slots, frame_gray, threshold=30):
+def update_slot_status(slots, frame_gray, threshold=120):
     new_status = []
     for slot in slots:
         pts = slot.get("points", [])
